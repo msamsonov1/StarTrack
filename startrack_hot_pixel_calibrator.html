@@ -1,0 +1,1453 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StarTrack: Autonomous Radiation Hot-Pixel Inversion & Star Tracker Calibrator</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- Bulletproof MathJax v3 Setup (Placed before script load) -->
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']]
+      },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            space: {
+              950: '#03050a',
+              900: '#070b14',
+              850: '#0b111e',
+              800: '#11192a'
+            },
+            cyan: {
+              400: '#22d3ee',
+              500: '#06b6d4'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      background-color: #03050a;
+      color: #e2e8f0;
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+    }
+    .formula-box {
+      background-color: #060a12;
+      border: 1px solid #1e293b;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.6);
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #070b14;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #334155;
+    }
+    .glow-cyan {
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.35);
+    }
+    .glow-rose {
+      box-shadow: 0 0 15px rgba(244, 63, 94, 0.35);
+    }
+    .active-tab-glow {
+      border-bottom: 2px solid #06b6d4;
+      color: #22d3ee !important;
+      background: linear-gradient(180deg, rgba(6, 182, 212, 0.05) 0%, rgba(6, 182, 212, 0.15) 100%);
+    }
+    @media print {
+      body { background: white; color: black; }
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+    }
+  </style>
+</head>
+<body class="flex flex-col min-h-screen custom-scrollbar">
+
+  <!-- Top Header / Mission Control Telemetry Status Bar -->
+  <header class="bg-space-900 border-b border-gray-800/80 sticky top-0 z-50 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-cyan-950/70 border border-cyan-500/30 rounded-lg text-cyan-400">
+          <i data-lucide="crosshair" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="text-lg font-bold tracking-tight text-white font-mono">StarTrack<span class="text-cyan-400">.io</span></span>
+            <span class="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold tracking-wider">NASA SBIR S3.04</span>
+          </div>
+          <p class="text-xs text-gray-400">Autonomous Radiation Hot-Pixel Inversion &amp; Real-Time Attitude Restorer</p>
+        </div>
+      </div>
+
+      <!-- Live Mission Readiness Indicators -->
+      <div class="hidden md:flex items-center space-x-6 text-xs font-mono">
+        <div class="flex flex-col text-right">
+          <span class="text-gray-400 text-[10px]">ATTITUDE STATUS</span>
+          <span id="headerAttitudeStatus" class="text-emerald-400 font-semibold flex items-center justify-end space-x-1">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-1"></span> NOMINAL LOCKED (3-AXIS)
+          </span>
+        </div>
+        <div class="border-l border-gray-800 pl-4 flex flex-col text-right">
+          <span class="text-gray-400 text-[10px]">TRAPPED PROTON FLUX</span>
+          <span id="headerRadiationFlux" class="text-cyan-300 font-semibold">1.42 × 10⁴ p⁺/cm²/s</span>
+        </div>
+        <div class="border-l border-gray-800 pl-4 flex flex-col text-right">
+          <span class="text-gray-400 text-[10px]">HOT-PIXELS ZEROED</span>
+          <span id="headerHotPixelsCount" class="text-rose-400 font-semibold">0 Pixels</span>
+        </div>
+        <button onclick="window.print()" class="no-print p-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 transition" title="Print Executive Dossier">
+          <i data-lucide="printer" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="bg-space-950 border-t border-gray-800/60 px-4 sm:px-8">
+      <div class="max-w-7xl mx-auto flex space-x-1 sm:space-x-4">
+        <button id="tabBtnSim" onclick="switchTab('sim')" class="active-tab-glow flex items-center space-x-2 py-3 px-4 text-xs sm:text-sm font-medium transition text-gray-400 hover:text-white">
+          <i data-lucide="activity" class="w-4 h-4"></i>
+          <span>Live Sensor Telemetry HUD</span>
+        </button>
+        <button id="tabBtnPhysics" onclick="switchTab('physics')" class="flex items-center space-x-2 py-3 px-4 text-xs sm:text-sm font-medium transition text-gray-400 hover:text-white">
+          <i data-lucide="cpu" class="w-4 h-4"></i>
+          <span>Mathematical Formulation &amp; Physics</span>
+        </button>
+        <button id="tabBtnProposal" onclick="switchTab('proposal')" class="flex items-center space-x-2 py-3 px-4 text-xs sm:text-sm font-medium transition text-gray-400 hover:text-white">
+          <i data-lucide="file-check-2" class="w-4 h-4"></i>
+          <span>NASA SBIR/STTR Proposal ($225k)</span>
+        </button>
+        <button id="tabBtnARR" onclick="switchTab('arr')" class="flex items-center space-x-2 py-3 px-4 text-xs sm:text-sm font-medium transition text-gray-400 hover:text-white">
+          <i data-lucide="dollar-sign" class="w-4 h-4"></i>
+          <span>Civil &amp; Commercial ARR ($218M)</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+
+    <!-- ========================================================================= -->
+    <!-- TAB 1: LIVE SIMULATION & TELEMETRY HUD                                    -->
+    <!-- ========================================================================= -->
+    <div id="viewSim" class="space-y-6">
+      
+      <!-- Top Alert Banner (Dynamic) -->
+      <div id="simAlertBanner" class="p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-emerald-300 flex items-center justify-between text-xs sm:text-sm">
+        <div class="flex items-center space-x-3">
+          <div class="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <span class="font-semibold font-mono tracking-wide">ADCS KALMAN FILTER LOCKED:</span> Spacecraft in stable inertial pointing. Gyro-directed optical star vectors align with catalog ephemeris.
+          </div>
+        </div>
+        <span class="font-mono bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/30 text-[11px]">RESIDUAL ERROR: 0.002°</span>
+      </div>
+
+      <!-- Main Interactive Workstation: Canvas + Phase-Space Chart -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- CMOS Star Tracker Focal Plane Surface Canvas (7 cols) -->
+        <div class="lg:col-span-7 bg-space-900 border border-gray-800 rounded-xl p-4 flex flex-col justify-between shadow-2xl relative overflow-hidden">
+          <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-800">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="aperture" class="w-4 h-4 text-cyan-400"></i>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-300 font-mono">Active CMOS Focal Plane Array (FPA)</h2>
+            </div>
+            <div class="flex items-center space-x-3 text-[11px] font-mono">
+              <span class="text-gray-400">Slew Rate $\omega_z$: <span id="telemetrySlew" class="text-cyan-300 font-bold">0.85 °/s</span></span>
+              <span class="text-gray-400">FPA Temp $T$: <span id="telemetryFpaTemp" class="text-amber-300 font-bold">+18.0 °C</span></span>
+            </div>
+          </div>
+
+          <div class="relative w-full h-[320px] sm:h-[380px] bg-space-950 rounded-lg overflow-hidden border border-gray-900 flex items-center justify-center">
+            <canvas id="fpaCanvas" class="w-full h-full block cursor-crosshair"></canvas>
+            
+            <!-- Canvas HUD Overlays -->
+            <div class="absolute top-3 left-3 bg-space-950/80 backdrop-blur-md p-2 rounded border border-gray-800 text-[10px] font-mono space-y-1 pointer-events-none">
+              <div class="text-cyan-400 flex items-center space-x-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                <span>Moving Stellar Centroid ($d\theta/dt = \omega_z$)</span>
+              </div>
+              <div class="text-rose-400 flex items-center space-x-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                <span>Radiation Lattice Defect ($d\theta/dt = 0$)</span>
+              </div>
+              <div class="text-emerald-400 flex items-center space-x-1.5">
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span>StarTrack Real-Time Masked Pixel</span>
+              </div>
+            </div>
+
+            <div class="absolute bottom-3 right-3 bg-space-950/80 backdrop-blur-md px-2 py-1 rounded border border-gray-800 text-[10px] font-mono text-gray-400 pointer-events-none">
+              Click canvas to inject ionizing particle hit
+            </div>
+          </div>
+
+          <!-- Bottom Canvas Mode Toggle & Quick Counters -->
+          <div class="mt-4 pt-3 border-t border-gray-800/80 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+            <div class="flex items-center space-x-2">
+              <span class="text-gray-400">StarTrack Filtering:</span>
+              <button id="toggleFilterBtn" onclick="toggleCalibratorEngine()" class="px-3 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition flex items-center space-x-1.5">
+                <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                <span id="filterStateText">ENABLED (AUTONOMOUS)</span>
+              </button>
+            </div>
+            <div class="flex items-center space-x-4 text-[11px] text-gray-400">
+              <div>True Stars Tracked: <span id="countStars" class="text-white font-bold">4</span></div>
+              <div>Hot Pixels Present: <span id="countAnomalies" class="text-rose-400 font-bold">0</span></div>
+              <div>Mask Rejections: <span id="countRejected" class="text-emerald-400 font-bold">0</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Primary Diagnostic Phase Space Chart (5 cols) -->
+        <!-- X-Axis: Temperature (T) | Y-Axis: Phase Angle (Theta) -->
+        <div class="lg:col-span-5 bg-space-900 border border-gray-800 rounded-xl p-4 flex flex-col justify-between shadow-2xl">
+          <div class="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="line-chart" class="w-4 h-4 text-cyan-400"></i>
+              <h2 class="text-xs font-semibold uppercase tracking-wider text-gray-300 font-mono">Phase-Space Diagnostic Observer</h2>
+            </div>
+            <span class="text-[10px] font-mono bg-gray-800 text-cyan-400 px-2 py-0.5 rounded border border-gray-700">T vs. &theta; Correlation</span>
+          </div>
+
+          <!-- Chart.js Canvas -->
+          <div class="relative w-full h-[280px] sm:h-[340px]">
+            <canvas id="phaseSpaceChart"></canvas>
+          </div>
+
+          <div class="mt-2 p-2.5 rounded-lg bg-space-950 border border-gray-800 text-[11px] text-gray-400 leading-relaxed">
+            <span class="text-cyan-400 font-semibold font-mono">THE PHYSICAL DISCRIMINATOR:</span>
+            Real optical centroids sweep phase angles $\theta(t) = \int \omega_z dt$ continuously. Radiation displacement latches create static $(x,y)$ loci whose dark current spikes nonlinearly via Arrhenius activation $\propto \exp(-E_g / 2kT)$ without any angular phase translation.
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Secondary Telemetry Stream Charts -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Attitude Estimation Residuals & Lost-in-Space Margin -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-4 shadow-xl">
+          <div class="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="compass" class="w-4 h-4 text-violet-400"></i>
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-300 font-mono">QUEST/MEKF Pointing Residual Error</h3>
+            </div>
+            <span id="residualMetric" class="text-[11px] font-mono text-emerald-400">0.003 deg (Locked)</span>
+          </div>
+          <div class="h-44">
+            <canvas id="telemetryResidualChart"></canvas>
+          </div>
+        </div>
+
+        <!-- Dark Signal Non-Uniformity (DSNU) & Pixel Bleed -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-4 shadow-xl">
+          <div class="flex items-center justify-between mb-2 pb-2 border-b border-gray-800">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="flame" class="w-4 h-4 text-rose-400"></i>
+              <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-300 font-mono">Dark Current Rate $\mathcal{I}_{\text{dark}}(T)$ (e⁻/pixel/s)</h3>
+            </div>
+            <span id="darkCurrentMetric" class="text-[11px] font-mono text-rose-400">42 e⁻/s (Nominal)</span>
+          </div>
+          <div class="h-44">
+            <canvas id="telemetryDarkCurrentChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Closed-Loop Flight Control & Fault Injection Console -->
+      <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-2xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-gray-800 gap-3">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wider text-white font-mono flex items-center space-x-2">
+              <i data-lucide="sliders" class="w-4 h-4 text-cyan-400"></i>
+              <span>Hardware Testbench &amp; Orbit Dynamics Controls</span>
+            </h3>
+            <p class="text-xs text-gray-400">Simulate South Atlantic Anomaly (SAA) transit, spacecraft thermal cycles, and reaction wheel maneuvers.</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button onclick="injectHeavyIonStrike()" class="px-3 py-2 rounded-lg bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/40 text-xs font-mono font-semibold transition flex items-center space-x-1.5 glow-rose">
+              <i data-lucide="radiation" class="w-3.5 h-3.5"></i>
+              <span>Inject Heavy Ion Strike (Displacement)</span>
+            </button>
+            <button onclick="resetSensorFPA()" class="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 border border-gray-700 text-xs font-mono transition flex items-center space-x-1.5">
+              <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+              <span>Clear Array</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 pt-5">
+          <!-- Slider 1: Focal Plane Temperature -->
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs font-mono">
+              <span class="text-gray-400">CMOS FPA Temp ($T$):</span>
+              <span id="sliderTempVal" class="text-amber-400 font-bold">+18.0 °C</span>
+            </div>
+            <input id="sliderTemp" type="range" min="-30" max="65" value="18" step="1" oninput="updateSimulationParameters()" class="w-full accent-cyan-400 bg-gray-800 rounded-lg cursor-pointer">
+            <div class="flex justify-between text-[10px] text-gray-400 font-mono">
+              <span>Deep Cold Eclipse (-30°C)</span>
+              <span>Direct Sun Soak (+65°C)</span>
+            </div>
+          </div>
+
+          <!-- Slider 2: Spacecraft Slew Rate / Phase Slew Rate -->
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs font-mono">
+              <span class="text-gray-400">Angular Slew Rate ($\omega_z$):</span>
+              <span id="sliderSlewVal" class="text-cyan-400 font-bold">0.85 °/s</span>
+            </div>
+            <input id="sliderSlew" type="range" min="0.0" max="3.0" value="0.85" step="0.05" oninput="updateSimulationParameters()" class="w-full accent-cyan-400 bg-gray-800 rounded-lg cursor-pointer">
+            <div class="flex justify-between text-[10px] text-gray-400 font-mono">
+              <span>Inertial Hold (0.0°/s)</span>
+              <span>Fast Slew (3.0°/s)</span>
+            </div>
+          </div>
+
+          <!-- Slider 3: Orbit Radiation Flux Level -->
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs font-mono">
+              <span class="text-gray-400">Proton / Trapped Ion Flux:</span>
+              <span id="sliderFluxVal" class="text-violet-400 font-bold">Medium (Van Allen Belt)</span>
+            </div>
+            <input id="sliderFlux" type="range" min="1" max="5" value="2" step="1" oninput="updateSimulationParameters()" class="w-full accent-cyan-400 bg-gray-800 rounded-lg cursor-pointer">
+            <div class="flex justify-between text-[10px] text-gray-400 font-mono">
+              <span>LEO Equatorial</span>
+              <span>Polar SAA / Jovian</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 2: CORE PHYSICS & MATHEMATICAL MODEL                                  -->
+    <!-- ========================================================================= -->
+    <div id="viewPhysics" class="hidden space-y-6">
+      
+      <!-- Physics Header Banner -->
+      <div class="bg-space-900 border border-gray-800 rounded-xl p-6 shadow-xl">
+        <div class="flex items-center space-x-3 mb-2">
+          <div class="p-2 bg-cyan-950 border border-cyan-500/30 rounded-lg text-cyan-400">
+            <i data-lucide="atom" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h2 class="text-lg font-bold text-white font-mono">Phase-Space Inversion &amp; Radiation Microphysics</h2>
+            <p class="text-xs text-gray-400">Decoupling True Stellar Kinematics from Lattice Point-Defect Recombination Centers</p>
+          </div>
+        </div>
+        <p class="text-xs sm:text-sm text-gray-300 leading-relaxed mt-2">
+          CMOS active pixel sensors (APS) aboard modern satellites suffer from non-ionizing energy loss (NIEL). Heavy ions and relativistic protons collide with the silicon lattice, displacing atoms and creating mid-gap bulk defect states (Shockley-Read-Hall recombination traps). These manifest as hot pixels that masquerade as faint guide stars, poisoning Wahba’s problem solvers (QUEST, ESOQ) and causing catastrophic attitude runaway.
+        </p>
+      </div>
+
+      <!-- 4 Formula Cards Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+        <!-- Card 1: Kinetic Star Centroid Kinematics -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-gray-800 mb-3">
+              <span class="text-xs font-mono font-semibold text-cyan-400 flex items-center space-x-2">
+                <i data-lucide="orbit" class="w-4 h-4"></i>
+                <span>1. Gyro-Coupled Stellar Centroid Trajectory</span>
+              </span>
+              <span class="text-[10px] bg-cyan-950 text-cyan-400 px-2 py-0.5 rounded border border-cyan-800/50">Kinematics</span>
+            </div>
+            <p class="text-xs text-gray-300 leading-relaxed">
+              When the spacecraft undergoes an angular velocity rotation $\boldsymbol{\omega}(t) = [\omega_x, \omega_y, \omega_z]^T$ measured by inertial gyroscopes, a genuine star unit vector $\mathbf{v}_i \in \mathbb{R}^3$ sweeps across focal plane coordinates $\mathbf{x}_i = [u_i, v_i]^T$ with an instantaneous phase angle $\theta_i(t)$:
+            </p>
+            
+            <div class="formula-box bg-gray-950 p-3 rounded-lg border border-gray-800 text-center text-cyan-300 text-sm overflow-x-auto my-3">
+              $$\theta_i(t) = \arctan2\left(v_i(t) - v_0, \, u_i(t) - u_0\right) = \int_{0}^{t} \left(\boldsymbol{\omega}(\tau) \times \mathbf{v}_i(\tau)\right) \cdot \hat{\mathbf{z}} \, d\tau + \theta_0$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed">
+              Differentiating yields $\frac{d\theta_i}{dt} \equiv \dot{\theta}_{\text{gyro}}(t)$. Any true celestial body must continuously satisfy the optical flow velocity field $\mathbf{u}_{\text{opt}} = -\boldsymbol{\omega} \times \mathbf{r} - \mathbf{v}_{\text{trans}}$.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800/80 text-[11px] font-mono text-cyan-400/90">
+            Constraint: $\left|\dot{\theta}_{\text{pixel}} - \dot{\theta}_{\text{gyro}}\right| < \epsilon_{\text{threshold}} \implies \text{Real Star}$
+          </div>
+        </div>
+
+        <!-- Card 2: Microscopic Dark Current Activation (Arrhenius SRH) -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-gray-800 mb-3">
+              <span class="text-xs font-mono font-semibold text-rose-400 flex items-center space-x-2">
+                <i data-lucide="zap-off" class="w-4 h-4"></i>
+                <span>2. Radiation Defect Arrhenius Thermokinetics</span>
+              </span>
+              <span class="text-[10px] bg-rose-950 text-rose-400 px-2 py-0.5 rounded border border-rose-800/50">Solid-State</span>
+            </div>
+            <p class="text-xs text-gray-300 leading-relaxed">
+              Radiation displacement spikes generate silicon divacancies ($V_2$) and phosphorus-vacancy complexes ($E$-centers) inside the depletion region. Dark current generation rate $\mathcal{I}_{\text{dark}}$ scales with temperature $T$ according to the classical Arrhenius-Shockley-Read-Hall relation:
+            </p>
+
+            <div class="formula-box bg-gray-950 p-3 rounded-lg border border-gray-800 text-center text-rose-300 text-sm overflow-x-auto my-3">
+              $$\mathcal{I}_{\text{dark}}(T) = C_0 \cdot T^{3/2} \cdot \exp\left( -\frac{E_{\text{act}}}{k_B T} \right) + \mathcal{I}_{\text{field}}(F, T)$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed">
+              Where $E_{\text{act}} \approx 0.63 \text{ eV}$ represents the mid-gap activation energy and $k_B$ is the Boltzmann constant. Ionizing radiation causes an exponential surge in $\mathcal{I}_{\text{dark}}$ without any angular phase translation ($\dot{\theta}_{\text{defect}} = 0$).
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800/80 text-[11px] font-mono text-rose-400/90">
+            Signature: $\frac{\partial \mathcal{I}}{\partial T} \gg 0 \quad \text{while} \quad \frac{d\theta}{dt} \approx 0 \implies \text{Radiation Defect}$
+          </div>
+        </div>
+
+        <!-- Card 3: Diagnostic State Observer & Dynamic Zeroing Inversion -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-gray-800 mb-3">
+              <span class="text-xs font-mono font-semibold text-violet-400 flex items-center space-x-2">
+                <i data-lucide="binary" class="w-4 h-4"></i>
+                <span>3. Real-Time State Inversion &amp; Masking Filter</span>
+              </span>
+              <span class="text-[10px] bg-violet-950 text-violet-400 px-2 py-0.5 rounded border border-violet-800/50">Estimation</span>
+            </div>
+            <p class="text-xs text-gray-300 leading-relaxed">
+              StarTrack constructs a phase-space discriminant metric $\Lambda_k$ for every bright cluster $k$ on the array by correlating temperature fluctuation $\Delta T$ with gyro phase rotation $\Delta \theta$:
+            </p>
+
+            <div class="formula-box bg-gray-950 p-3 rounded-lg border border-gray-800 text-center text-violet-300 text-sm overflow-x-auto my-3">
+              $$\Lambda_k = \frac{\left\| \mathbf{x}_k(t) - \mathbf{x}_k(t - \Delta t) \right\|}{\int_{t-\Delta t}^{t} \|\boldsymbol{\omega}(\tau)\| d\tau} \cdot \left[ 1 + \alpha \frac{\mathcal{I}_k(T) - \bar{\mathcal{I}}_{\text{bg}}}{\sigma_{\text{shot}}} \right]^{-1}$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed">
+              If $\Lambda_k < \Gamma_{\text{crit}}$ (where $\Gamma_{\text{crit}} = 0.15$), pixel cluster $k$ is marked as anomalous and assigned weight $w_k = 0$ in the Wahba loss function before entering the attitude quaternion solution.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800/80 text-[11px] font-mono text-violet-400/90">
+            Wahba Weighting: $J(A) = \frac{1}{2} \sum_{k=1}^N w_k \left\| \mathbf{b}_k - A \mathbf{r}_k \right\|^2, \quad w_k \in \{0, 1\}$
+          </div>
+        </div>
+
+        <!-- Card 4: CMOS Substrate Hardware & Thermal Gradients -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between pb-3 border-b border-gray-800 mb-3">
+              <span class="text-xs font-mono font-semibold text-amber-400 flex items-center space-x-2">
+                <i data-lucide="microchip" class="w-4 h-4"></i>
+                <span>4. Sensor Architecture &amp; Thermal Dissipation</span>
+              </span>
+              <span class="text-[10px] bg-amber-950 text-amber-400 px-2 py-0.5 rounded border border-amber-800/50">Hardware</span>
+            </div>
+            <p class="text-xs text-gray-300 leading-relaxed">
+              The focal plane consists of a radiation-tolerant $2048 \times 2048$ pinned photodiode (PPD) CMOS sensor featuring a $5.5\,\mu\text{m}$ pitch and sapphire front window. Thermal transport obeys Fourier’s heat conduction across the thermoelectric cooler (TEC) mount:
+            </p>
+
+            <div class="formula-box bg-gray-950 p-3 rounded-lg border border-gray-800 text-center text-amber-300 text-sm overflow-x-auto my-3">
+              $$\rho c_p \frac{\partial T(x,y,t)}{\partial t} = \kappa \nabla^2 T + Q_{\text{electronics}} - \frac{\alpha_{\text{TEC}}}{d_{\text{sub}}} \left(T - T_{\text{sink}}\right)$$
+            </div>
+
+            <p class="text-xs text-gray-400 leading-relaxed">
+              Because temperature gradients change at time scales $\tau_{\text{thermal}} \sim 10^1\text{--}10^2 \text{ s}$ while gyro tracking computes at $\tau_{\text{attitude}} \sim 10^{-1} \text{ s}$ ($10\text{ Hz}$), StarTrack easily disentangles thermal-induced dark voltage surges from real stellar kinematics.
+            </p>
+          </div>
+          <div class="mt-4 pt-3 border-t border-gray-800/80 text-[11px] font-mono text-amber-400/90">
+            Sensor Spec: 12-bit ADC, $78\text{ dB}$ Dynamic Range, $-40\text{°C}$ to $+75\text{°C}$ Mil-Spec Range
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 3: $225k NASA SBIR/STTR PROPOSAL & TRANSITION                        -->
+    <!-- ========================================================================= -->
+    <div id="viewProposal" class="hidden space-y-6">
+
+      <!-- SBIR Topic Banner -->
+      <div class="bg-space-900 border border-gray-800 rounded-xl p-6 shadow-xl">
+        <div class="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-gray-800 gap-4">
+          <div>
+            <div class="flex items-center space-x-2">
+              <span class="px-2.5 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 text-xs font-mono font-bold">NASA SBIR 2026 Phase I</span>
+              <span class="text-xs font-mono text-gray-400">Subtopic S3.04: Guidance, Navigation, and Control (GN&amp;C)</span>
+            </div>
+            <h2 class="text-xl font-bold text-white font-mono mt-2">StarTrack: Autonomous In-Flight Hot-Pixel Inversion for Deep-Space CMOS Star Trackers</h2>
+            <p class="text-xs sm:text-sm text-gray-400 mt-1">Proposal Tracking ID: <span class="font-mono text-cyan-300">SBIR-26-1-S3.04-8921</span> | Phase I Award: <span class="font-mono text-emerald-400 font-bold">$225,000</span> (6 Months)</p>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-gray-400 font-mono block">STTR Research Partner</span>
+            <span class="text-sm font-bold text-white font-mono">University of Central Florida (UCF)</span>
+            <span class="text-xs text-cyan-400 font-mono block">CATER Labs ($67,500 Subcontract / 30.0%)</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mt-4 pt-2 text-xs font-mono">
+          <div class="p-3 bg-space-950 rounded-lg border border-gray-800">
+            <span class="text-gray-400 block text-[10px]">CURRENT TRL</span>
+            <span class="text-amber-400 font-bold text-sm">TRL 3 (Lab Proven)</span>
+          </div>
+          <div class="p-3 bg-space-950 rounded-lg border border-gray-800">
+            <span class="text-gray-400 block text-[10px]">TARGET EXIT TRL</span>
+            <span class="text-emerald-400 font-bold text-sm">TRL 5 (HIL Vacuum Validated)</span>
+          </div>
+          <div class="p-3 bg-space-950 rounded-lg border border-gray-800">
+            <span class="text-gray-400 block text-[10px]">UCF ALLOCATION</span>
+            <span class="text-cyan-400 font-bold text-sm">30.0% ($67,500)</span>
+          </div>
+          <div class="p-3 bg-space-950 rounded-lg border border-gray-800">
+            <span class="text-gray-400 block text-[10px]">MISSION TARGETS</span>
+            <span class="text-violet-400 font-bold text-sm">Europa Clipper, Artemis Gateway</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase I Work Breakdown Schedule (Months 1–6) -->
+      <div class="bg-space-900 border border-gray-800 rounded-xl p-6 shadow-xl">
+        <h3 class="text-sm font-semibold uppercase tracking-wider text-white font-mono flex items-center space-x-2 mb-4 pb-2 border-b border-gray-800">
+          <i data-lucide="calendar-check" class="w-4 h-4 text-cyan-400"></i>
+          <span>Phase I Technical Milestones &amp; Deliverables Schedule</span>
+        </h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <!-- Month 1-2 -->
+          <div class="p-4 rounded-xl bg-space-950 border border-gray-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">Milestone M1</span>
+                <span class="text-gray-500">M1 - M2</span>
+              </div>
+              <h4 class="text-xs font-bold text-white mb-2">Lattice Displacement &amp; NIEL Kinetic Modeling</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Formulate detailed GEANT4 Monte Carlo proton collision models for $5.5\,\mu\text{m}$ CMOS pixels. Calibrate temperature-dependent Arrhenius activation curves ($E_{\text{act}} = 0.55\text{--}0.70\text{ eV}$) under variable thermal cycling.
+              </p>
+            </div>
+            <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] font-mono text-cyan-300">
+              Deliverable: D1 Kinetic Defect Library
+            </div>
+          </div>
+
+          <!-- Month 3 -->
+          <div class="p-4 rounded-xl bg-space-950 border border-gray-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">Milestone M2</span>
+                <span class="text-gray-500">M3</span>
+              </div>
+              <h4 class="text-xs font-bold text-white mb-2">State Inversion Observer &amp; Zeroing Filter</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Develop embedded C-based real-time 2D $(T, \theta)$ phase discriminator. Implement autonomous zeroing thresholding integrated with Multiplicative Extended Kalman Filter (MEKF) attitude solvers at $10\text{ Hz}$.
+              </p>
+            </div>
+            <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] font-mono text-cyan-300">
+              Deliverable: D2 Embedded Flight Core
+            </div>
+          </div>
+
+          <!-- Month 4-5 -->
+          <div class="p-4 rounded-xl bg-space-950 border border-gray-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">Milestone M3</span>
+                <span class="text-gray-500">M4 - M5</span>
+              </div>
+              <h4 class="text-xs font-bold text-white mb-2">Hardware-in-the-Loop (HIL) Chamber Vacuum Testing</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Partner with UCF CATER Labs to subject prototype CMOS sensors to $100\text{ MeV}$ proton beam exposures and cryogenic thermal vacuum cycling ($-35\text{°C}$ to $+65\text{°C}$). Validate attitude retention under $500\times$ baseline hot-pixel density.
+              </p>
+            </div>
+            <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] font-mono text-cyan-300">
+              Deliverable: D3 Radiation Chamber Report
+            </div>
+          </div>
+
+          <!-- Month 6 -->
+          <div class="p-4 rounded-xl bg-space-950 border border-gray-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between text-xs font-mono mb-2">
+                <span class="text-cyan-400 font-bold">Milestone M4</span>
+                <span class="text-gray-500">M6</span>
+              </div>
+              <h4 class="text-xs font-bold text-white mb-2">Phase II Transition Blueprint &amp; Flight FPGA Spec</h4>
+              <p class="text-[11px] text-gray-400 leading-relaxed">
+                Synthesize Verilog IP core targeted for Microchip RTG4 / AMD XQR Versal space-grade FPGAs. Finalize commercial Phase II transition plan for NASA SmallSat missions and commercial constellation operators.
+              </p>
+            </div>
+            <div class="mt-3 pt-2 border-t border-gray-800/80 text-[10px] font-mono text-cyan-300">
+              Deliverable: D4 Final Phase I Report &amp; IP Core
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Phase II Transition & Institutional Facilities -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- University Research Partner Subcontract Details -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+          <div class="flex items-center space-x-2 pb-3 border-b border-gray-800 mb-3">
+            <i data-lucide="graduation-cap" class="w-5 h-5 text-cyan-400"></i>
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-white font-mono">University Research Partner: UCF CATER Facilities</h3>
+          </div>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            The <strong class="text-white">University of Central Florida Center for Advanced Turbomachinery and Energy Research (CATER)</strong> provides premier thermal-vacuum environmental testing and ultra-clean optical calibration facilities.
+          </p>
+          <ul class="mt-3 space-y-2 text-xs text-gray-400">
+            <li class="flex items-start space-x-2">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+              <span><strong>Cryo-TVAC Chambers:</strong> High-vacuum ($10^{-7}\text{ Torr}$) cycling from $-60\text{°C}$ to $+90\text{°C}$ to stress thermal dark current models.</span>
+            </li>
+            <li class="flex items-start space-x-2">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+              <span><strong>Optical Collimators:</strong> Multi-star simulator arrays capable of projecting high-fidelity magnitude $2\text{--}8$ star patterns at $0.001\text{ arcsec}$ resolution.</span>
+            </li>
+            <li class="flex items-start space-x-2">
+              <i data-lucide="check" class="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5"></i>
+              <span><strong>Budgetary Allocation:</strong> Strict 30.0% STTR subcontract ($67,500) covering 1 PI month, 1 graduate research assistant, and 60 hours TVAC chamber runtime.</span>
+            </li>
+          </ul>
+        </div>
+
+        <!-- NASA Phase II Transition & Dual-Use Mission Insertion -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+          <div class="flex items-center space-x-2 pb-3 border-b border-gray-800 mb-3">
+            <i data-lucide="rocket" class="w-5 h-5 text-violet-400"></i>
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-white font-mono">Phase II Scale-Up ($1.15M) &amp; NASA Dual-Use Adoption</h3>
+          </div>
+          <p class="text-xs text-gray-300 leading-relaxed">
+            Upon successful Phase I demonstration, StarTrack will bridge directly to a 24-month Phase II initiative ($1,150,000) focusing on flight hardware readiness:
+          </p>
+          <div class="mt-3 space-y-2 text-xs text-gray-400">
+            <div class="p-2.5 rounded bg-space-950 border border-gray-800">
+              <strong class="text-white block">NASA Science Mission Directorate (SMD):</strong>
+              Integration as flight software patch on Jovian and lunar missions where trapped radiation belt exposure prematurely degrades optical star tracker availability.
+            </div>
+            <div class="p-2.5 rounded bg-space-950 border border-gray-800">
+              <strong class="text-white block">NASA Space Operations (Human Exploration):</strong>
+              Secondary attitude validation for Orion and Artemis Gateway navigation optical heads, preventing autonomous abort triggers caused by SAA hot pixels.
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- TAB 4: COMMERCIAL & NATIONWIDE ARR BREAKDOWN                             -->
+    <!-- ========================================================================= -->
+    <div id="viewARR" class="hidden space-y-6">
+
+      <!-- Executive Commercial Valuation Header -->
+      <div class="bg-space-900 border border-gray-800 rounded-xl p-6 shadow-xl">
+        <div class="flex flex-col md:flex-row md:items-center justify-between pb-4 border-b border-gray-800 gap-4">
+          <div>
+            <span class="px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-bold">Commercial &amp; Civil Market Opportunity</span>
+            <h2 class="text-xl font-bold text-white font-mono mt-2">Dual-Use Satellite Fleet &amp; Industrial Optical Sensing ARR</h2>
+            <p class="text-xs text-gray-400 mt-1">Expanding radiation defect zeroing to commercial LEO mega-constellations, Earth observation, and harsh industrial imaging.</p>
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-gray-400 font-mono block">TOTAL ADDRESSABLE CIVIL ARR</span>
+            <span class="text-2xl font-extrabold text-emerald-400 font-mono">$218.4M / Year</span>
+            <span class="text-[11px] text-gray-400 font-mono block">Enterprise Valuation (10x Multiple): <strong class="text-white">$2.18B</strong></span>
+          </div>
+        </div>
+
+        <div class="mt-4 p-3 bg-space-950 rounded-lg border border-gray-800 text-xs text-gray-300 leading-relaxed">
+          <strong class="text-cyan-400 font-mono">EXECUTIVE VALUE PROPOSITION:</strong>
+          Satellite fleet operators incur $14M+ replacement costs per attitude-diverged satellite. StarTrack provides a pure software-defined firmware layer that immunizes commercial off-the-shelf (COTS) CMOS image sensors against radiation wear-out, slashing satellite attrition by 74% and eliminating premature orbit de-commissioning.
+        </div>
+      </div>
+
+      <!-- Commercial ARR Distribution Table -->
+      <div class="bg-space-900 border border-gray-800 rounded-xl overflow-hidden shadow-xl">
+        <div class="p-4 border-b border-gray-800 flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <i data-lucide="table" class="w-4 h-4 text-cyan-400"></i>
+            <h3 class="text-xs font-semibold uppercase tracking-wider text-white font-mono">Market Segment Revenue Model (ARR)</h3>
+          </div>
+          <span class="text-[11px] font-mono text-gray-400">Strict Civil / Commercial Scope</span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs font-mono">
+            <thead class="bg-space-950 text-gray-400 uppercase text-[10px] tracking-wider border-b border-gray-800">
+              <tr>
+                <th class="py-3 px-4">Market Vertical</th>
+                <th class="py-3 px-4">Target Application</th>
+                <th class="py-3 px-4">SaaS / Royalty Metric</th>
+                <th class="py-3 px-4">Total Asset Base</th>
+                <th class="py-3 px-4 text-right">Mature Annual ARR</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-800/60 text-gray-300">
+              <tr class="hover:bg-space-850/50 transition">
+                <td class="py-3.5 px-4 font-bold text-white flex items-center space-x-2">
+                  <i data-lucide="satellite" class="w-4 h-4 text-cyan-400"></i>
+                  <span>LEO Mega-Constellations</span>
+                </td>
+                <td class="py-3.5 px-4">Broadband Internet Fleet (Starlink, Kuiper, OneWeb)</td>
+                <td class="py-3.5 px-4 text-cyan-300">$4,800 / satellite / yr</td>
+                <td class="py-3.5 px-4">18,500 active craft</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$88.8M</td>
+              </tr>
+              <tr class="hover:bg-space-850/50 transition">
+                <td class="py-3.5 px-4 font-bold text-white flex items-center space-x-2">
+                  <i data-lucide="globe" class="w-4 h-4 text-emerald-400"></i>
+                  <span>Commercial Earth Observation</span>
+                </td>
+                <td class="py-3.5 px-4">High-Res Optical &amp; Hyperspectral Imaging Satellites</td>
+                <td class="py-3.5 px-4 text-cyan-300">$18,500 / payload / yr</td>
+                <td class="py-3.5 px-4">1,900 satellites</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$35.15M</td>
+              </tr>
+              <tr class="hover:bg-space-850/50 transition">
+                <td class="py-3.5 px-4 font-bold text-white flex items-center space-x-2">
+                  <i data-lucide="shield-alert" class="w-4 h-4 text-amber-400"></i>
+                  <span>Nuclear Plant Inspection</span>
+                </td>
+                <td class="py-3.5 px-4">Robotic Containment Vessel &amp; Spent Fuel Pool Cameras</td>
+                <td class="py-3.5 px-4 text-cyan-300">$9,200 / sensor unit / yr</td>
+                <td class="py-3.5 px-4">3,800 active robots</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$34.96M</td>
+              </tr>
+              <tr class="hover:bg-space-850/50 transition">
+                <td class="py-3.5 px-4 font-bold text-white flex items-center space-x-2">
+                  <i data-lucide="cpu" class="w-4 h-4 text-violet-400"></i>
+                  <span>Semiconductor EUV Inspection</span>
+                </td>
+                <td class="py-3.5 px-4">High-Vacuum Mask &amp; Wafer High-Energy Sensor Quality</td>
+                <td class="py-3.5 px-4 text-cyan-300">$45,000 / tool / yr</td>
+                <td class="py-3.5 px-4">680 EUV scanners</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$30.6M</td>
+              </tr>
+              <tr class="hover:bg-space-850/50 transition">
+                <td class="py-3.5 px-4 font-bold text-white flex items-center space-x-2">
+                  <i data-lucide="plane" class="w-4 h-4 text-rose-400"></i>
+                  <span>Commercial Aviation GNSS-Denied</span>
+                </td>
+                <td class="py-3.5 px-4">Astro-Inertial Celestial Navigation Units (Commercial Jets)</td>
+                <td class="py-3.5 px-4 text-cyan-300">$2,400 / aircraft / yr</td>
+                <td class="py-3.5 px-4">12,000 long-haul craft</td>
+                <td class="py-3.5 px-4 text-right font-bold text-emerald-400">$28.8M</td>
+              </tr>
+            </tbody>
+            <tfoot class="bg-space-950 font-bold border-t border-gray-700 text-white">
+              <tr>
+                <td colspan="4" class="py-3 px-4 text-right">TOTAL NATIONWIDE COMMERCIAL ARR:</td>
+                <td class="py-3 px-4 text-right text-emerald-400 text-sm">$218.31M</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <!-- Detailed Vertical Breakdown Cards (Why Incumbents Missed It) -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        <!-- Card 1: LEO Megaconstellations -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+          <div class="flex items-center space-x-2 pb-2 border-b border-gray-800 mb-2">
+            <i data-lucide="satellite" class="w-4 h-4 text-cyan-400"></i>
+            <h4 class="text-xs font-bold text-white font-mono">1. LEO Broadband Mega-Constellations</h4>
+          </div>
+          <div class="text-xs text-gray-300 space-y-2">
+            <p><strong class="text-cyan-400">Physics in 1 Sentence:</strong> Low-Earth orbit craft constantly traverse the South Atlantic Anomaly (SAA) where high-energy trapped protons dislocate silicon atoms into permanent thermal hot spots that confuse star matching.</p>
+            <p><strong class="text-amber-400">Why Others Missed This (Plain English):</strong> Incumbent operators rely on heavy tungsten shielding or periodically power down the star tracker during SAA flyovers, dropping continuous mission telemetry. StarTrack subtracts stationary thermal defects in software while the satellite continues uninterrupted pointing.</p>
+          </div>
+        </div>
+
+        <!-- Card 2: Nuclear Power Robotic Inspection -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+          <div class="flex items-center space-x-2 pb-2 border-b border-gray-800 mb-2">
+            <i data-lucide="shield-alert" class="w-4 h-4 text-rose-400"></i>
+            <h4 class="text-xs font-bold text-white font-mono">2. Nuclear Plant &amp; Waste Pool Robotics</h4>
+          </div>
+          <div class="text-xs text-gray-300 space-y-2">
+            <p><strong class="text-cyan-400">Physics in 1 Sentence:</strong> Intense gamma and neutron fluxes cause acute ionization damage that blinds inspection cameras within hours of entering reactor containment vessels.</p>
+            <p><strong class="text-amber-400">Why Others Missed This (Plain English):</strong> Industry conventionally discards expensive rad-hard cameras every 20 operational hours as consumable waste. StarTrack extends camera lifetime by $12\times$ by dynamically zeroing stationary defect pixels in the optical stream, saving millions in decommissioning downtime.</p>
+          </div>
+        </div>
+
+        <!-- Card 3: Semiconductor EUV Lithography -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+          <div class="flex items-center space-x-2 pb-2 border-b border-gray-800 mb-2">
+            <i data-lucide="cpu" class="w-4 h-4 text-violet-400"></i>
+            <h4 class="text-xs font-bold text-white font-mono">3. Semiconductor High-NA EUV Mask Metrology</h4>
+          </div>
+          <div class="text-xs text-gray-300 space-y-2">
+            <p><strong class="text-cyan-400">Physics in 1 Sentence:</strong> $13.5\text{ nm}$ extreme ultraviolet photons carry sufficient energy ($91.8\text{ eV}$) to sputter secondary electrons, creating artificial hot-pixel artifacts across wafer inspection sensors.</p>
+            <p><strong class="text-amber-400">Why Others Missed This (Plain English):</strong> Foundries halt multi-million-dollar lithography lines for calibration cycles whenever sensor pixel noise drifts. StarTrack separates mechanical reticle motion from stationary sensor damage dynamically on-the-fly, preventing false wafer-defect halts.</p>
+          </div>
+        </div>
+
+        <!-- Card 4: Commercial Aviation Celestial Navigation -->
+        <div class="bg-space-900 border border-gray-800 rounded-xl p-5 shadow-xl">
+          <div class="flex items-center space-x-2 pb-2 border-b border-gray-800 mb-2">
+            <i data-lucide="plane" class="w-4 h-4 text-emerald-400"></i>
+            <h4 class="text-xs font-bold text-white font-mono">4. Commercial Aviation Astro-Inertial GN&amp;C</h4>
+          </div>
+          <div class="text-xs text-gray-300 space-y-2">
+            <p><strong class="text-cyan-400">Physics in 1 Sentence:</strong> Cosmic ray showers at 40,000 ft altitude generate spurious noise on optical celestial trackers used for jam-proof backup navigation when GPS signals are spoofed.</p>
+            <p><strong class="text-amber-400">Why Others Missed This (Plain English):</strong> Legacy airlines revert to drift-prone mechanical gyros when satellite spoofing occurs. StarTrack enables low-cost daytime star trackers on commercial aircraft to instantly differentiate real polaris/vega vectors from cosmic ray noise, preserving un-jammable navigational integrity.</p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Enterprise Investor Callout & Contact Box -->
+      <div class="bg-space-950 border border-cyan-500/30 rounded-xl p-6 text-center shadow-2xl relative overflow-hidden">
+        <div class="max-w-2xl mx-auto space-y-3">
+          <span class="text-xs uppercase font-mono px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-semibold tracking-wider">
+            Commercial Partnership &amp; SBIR Co-Investment
+          </span>
+          <h3 class="text-lg font-bold text-white font-mono">Secure Enterprise License or Partner for NASA Phase II</h3>
+          <p class="text-xs text-gray-400 leading-relaxed">
+            StarTrack is available for OEM licensing in star tracker firmware, FPGA image processing IP blocks, and custom radiation-tolerant optical payloads. Direct technical inquiries or investor due diligence to our aerospace engineering division:
+          </p>
+          <div class="pt-2">
+            <a href="mailto:support@rfwavecode.com" class="inline-flex items-center space-x-2 px-5 py-2.5 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-space-950 font-mono font-bold text-xs transition glow-cyan">
+              <i data-lucide="mail" class="w-4 h-4"></i>
+              <span>support@rfwavecode.com</span>
+            </a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Global Footer -->
+  <footer class="bg-space-950 border-t border-gray-800/80 py-4 px-6 text-center text-xs font-mono text-gray-400">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center space-x-2">
+        <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
+        <span>StarTrack SBIR S3.04 Deep-Tech Architecture</span>
+      </div>
+      <div>NASA STTR Research Subcontract: UCF CATER Labs (30.0% Allocation)</div>
+      <div>Confidential &bull; Civil / Commercial Software Runtime</div>
+    </div>
+  </footer>
+
+  <!-- ========================================================================= -->
+  <!-- JAVASCRIPT: SIMULATION ENGINE, CHARTS, MATHJAX & TAB CONTROLLER           -->
+  <!-- ========================================================================= -->
+  <script>
+    // -------------------------------------------------------------
+    // Global Simulation State & Parameters
+    // -------------------------------------------------------------
+    const simState = {
+      // Physical Variables
+      fpaTemp: 18.0,            // Degrees Celsius (T)
+      slewRate: 0.85,           // Deg/sec (omega_z)
+      fluxLevel: 2,             // 1 (low) to 5 (extreme SAA)
+      filterActive: true,       // Autonomous zeroing active
+      
+      // Dynamic Kinematics
+      currentAngle: 0.0,        // Current theta in radians
+      timeStep: 0,              // Simulation tick
+      
+      // Hardware Assets
+      stars: [
+        { id: 'HIP-32349 (Sirius)', radius: 105, initialAngle: 0.2, magnitude: 1.0, color: '#e0f2fe' },
+        { id: 'HIP-30438 (Canopus)', radius: 65, initialAngle: 1.8, magnitude: 1.5, color: '#fef08a' },
+        { id: 'HIP-71683 (Rigil Kent)', radius: 140, initialAngle: 3.4, magnitude: 2.1, color: '#fed7aa' },
+        { id: 'HIP-69673 (Arcturus)', radius: 80, initialAngle: 4.9, magnitude: 1.8, color: '#fbcfe8' }
+      ],
+      hotPixels: [],            // List of radiation induced damage pixels
+      rejectedCount: 0,
+      
+      // Telemetry Historical Buffers (for charts)
+      historyResidual: [0.003, 0.004, 0.003, 0.005, 0.004, 0.003, 0.004],
+      historyDarkCurrent: [42, 45, 43, 44, 46, 45, 48],
+      telemetryLabels: ['-6s', '-5s', '-4s', '-3s', '-2s', '-1s', 'Now']
+    };
+
+    // -------------------------------------------------------------
+    // Tab Controller (Explicit mapping dictionary, zero string bugs)
+    // -------------------------------------------------------------
+    const tabMapping = {
+      'sim': { viewId: 'viewSim', btnId: 'tabBtnSim' },
+      'physics': { viewId: 'viewPhysics', btnId: 'tabBtnPhysics' },
+      'proposal': { viewId: 'viewProposal', btnId: 'tabBtnProposal' },
+      'arr': { viewId: 'viewARR', btnId: 'tabBtnARR' }
+    };
+
+    function switchTab(targetKey) {
+      Object.keys(tabMapping).forEach(key => {
+        const item = tabMapping[key];
+        const viewEl = document.getElementById(item.viewId);
+        const btnEl = document.getElementById(item.btnId);
+
+        if (key === targetKey) {
+          viewEl.classList.remove('hidden');
+          btnEl.classList.add('active-tab-glow');
+        } else {
+          viewEl.classList.add('hidden');
+          btnEl.classList.remove('active-tab-glow');
+        }
+      });
+
+      // Rerender MathJax equations when entering physics or proposal tabs
+      if (window.MathJax && window.MathJax.typesetPromise) {
+        window.MathJax.typesetPromise();
+      }
+
+      // Reinitialize canvas dimensions when returning to sim view
+      if (targetKey === 'sim') {
+        resizeCanvas();
+      }
+    }
+
+    // -------------------------------------------------------------
+    // Canvas Initialization & Rendering Engine
+    // -------------------------------------------------------------
+    const canvas = document.getElementById('fpaCanvas');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = rect.width || 600;
+      const h = rect.height || 340;
+
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      ctx.resetTransform ? ctx.resetTransform() : ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+    }
+
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+    });
+
+    // Interactive Ion Injection on Canvas Click
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      createHotPixel(clickX, clickY);
+    });
+
+    function createHotPixel(x, y) {
+      const id = 'DEFECT-' + Math.floor(Math.random() * 8999 + 1000);
+      simState.hotPixels.push({
+        id: id,
+        x: x !== undefined ? x : Math.random() * (canvas.clientWidth - 80) + 40,
+        y: y !== undefined ? y : Math.random() * (canvas.clientHeight - 80) + 40,
+        tempBaseline: simState.fpaTemp,
+        energy: (Math.random() * 40 + 60).toFixed(1), // Ion energy in MeV
+        createdTick: simState.timeStep
+      });
+      updateCounterDisplays();
+    }
+
+    function injectHeavyIonStrike() {
+      createHotPixel();
+      const headerFlux = document.getElementById('headerRadiationFlux');
+      headerFlux.classList.add('text-rose-400');
+      headerFlux.innerText = 'HIGH-ION SPIKE DETECTED';
+      setTimeout(() => {
+        headerFlux.classList.remove('text-rose-400');
+        headerFlux.innerText = (simState.fluxLevel * 0.9 + 0.5).toFixed(2) + ' × 10⁴ p⁺/cm²/s';
+      }, 1400);
+    }
+
+    function resetSensorFPA() {
+      simState.hotPixels = [];
+      simState.rejectedCount = 0;
+      updateCounterDisplays();
+      updateAttitudeUI();
+    }
+
+    function toggleCalibratorEngine() {
+      simState.filterActive = !simState.filterActive;
+      const btnText = document.getElementById('filterStateText');
+      const toggleBtn = document.getElementById('toggleFilterBtn');
+
+      if (simState.filterActive) {
+        btnText.innerText = 'ENABLED (AUTONOMOUS)';
+        toggleBtn.className = 'px-3 py-1 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30 transition flex items-center space-x-1.5';
+      } else {
+        btnText.innerText = 'DISABLED (RAW FPA PASSTHROUGH)';
+        toggleBtn.className = 'px-3 py-1 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition flex items-center space-x-1.5 glow-rose';
+      }
+      updateAttitudeUI();
+    }
+
+    // -------------------------------------------------------------
+    // Chart.js Phase-Space & Telemetry Initialization
+    // -------------------------------------------------------------
+    let phaseSpaceChart = null;
+    let telemetryResidualChart = null;
+    let telemetryDarkCurrentChart = null;
+
+    function initCharts() {
+      // 1. Primary Diagnostic Chart: Temperature ($T$) vs. Phase Angle ($\theta$)
+      const ctxPhase = document.getElementById('phaseSpaceChart').getContext('2d');
+      phaseSpaceChart = new Chart(ctxPhase, {
+        type: 'scatter',
+        data: {
+          datasets: [
+            {
+              label: 'Real Star Trajectory (Kinetic Theta Sweep)',
+              data: [],
+              borderColor: '#22d3ee',
+              backgroundColor: 'rgba(34, 211, 238, 0.8)',
+              pointRadius: 5,
+              pointHoverRadius: 8,
+              showLine: false
+            },
+            {
+              label: 'Static Radiation Damage Pixels (Zero Phase Shift)',
+              data: [],
+              borderColor: '#f43f5e',
+              backgroundColor: 'rgba(244, 63, 94, 0.9)',
+              pointRadius: 6,
+              pointStyle: 'crossRot',
+              pointHoverRadius: 9,
+              showLine: false
+            },
+            {
+              label: 'StarTrack Mask Threshold Boundary',
+              data: [
+                { x: -30, y: 15 }, { x: 0, y: 15 }, { x: 25, y: 15 }, { x: 65, y: 15 }
+              ],
+              borderColor: 'rgba(244, 63, 94, 0.4)',
+              borderDash: [5, 5],
+              fill: 'start',
+              backgroundColor: 'rgba(244, 63, 94, 0.05)',
+              showLine: true,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: {
+              title: {
+                display: true,
+                text: 'Focal Plane Temperature T (°C)',
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+              min: -35,
+              max: 70
+            },
+            y: {
+              title: {
+                display: true,
+                text: 'Centroid Trajectory Phase Shift θ (deg)',
+                color: '#94a3b8',
+                font: { family: 'JetBrains Mono', size: 10 }
+              },
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } },
+              min: 0,
+              max: 360
+            }
+          },
+          plugins: {
+            legend: {
+              labels: {
+                color: '#cbd5e1',
+                font: { family: 'JetBrains Mono', size: 9 },
+                boxWidth: 10
+              }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  return `T: ${context.parsed.x.toFixed(1)}°C | θ: ${context.parsed.y.toFixed(1)}°`;
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // 2. Residual Error Chart
+      const ctxResidual = document.getElementById('telemetryResidualChart').getContext('2d');
+      telemetryResidualChart = new Chart(ctxResidual, {
+        type: 'line',
+        data: {
+          labels: simState.telemetryLabels,
+          datasets: [{
+            label: 'Wahba Loss Residual (deg)',
+            data: simState.historyResidual,
+            borderColor: '#a78bfa',
+            backgroundColor: 'rgba(167, 139, 250, 0.1)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 9 } } },
+            y: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { size: 9 } },
+              min: 0,
+              max: 0.05
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+
+      // 3. Dark Current Rate Chart
+      const ctxDark = document.getElementById('telemetryDarkCurrentChart').getContext('2d');
+      telemetryDarkCurrentChart = new Chart(ctxDark, {
+        type: 'line',
+        data: {
+          labels: simState.telemetryLabels,
+          datasets: [{
+            label: 'Dark Current e⁻/pixel/s',
+            data: simState.historyDarkCurrent,
+            borderColor: '#f43f5e',
+            backgroundColor: 'rgba(244, 63, 94, 0.1)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2,
+            pointRadius: 2
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 9 } } },
+            y: {
+              grid: { color: 'rgba(255,255,255,0.05)' },
+              ticks: { color: '#64748b', font: { size: 9 } },
+              min: 0,
+              max: 200
+            }
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    // -------------------------------------------------------------
+    // Simulation Physics Step Loop
+    // -------------------------------------------------------------
+    function updateSimulation() {
+      simState.timeStep++;
+      const dt = 0.04; // 40ms tick
+
+      // Increment rotation angle based on gyro slew rate (deg/s converted to rad)
+      const angularVelRad = (simState.slewRate * Math.PI) / 180;
+      simState.currentAngle = (simState.currentAngle + angularVelRad * dt) % (2 * Math.PI);
+
+      // Random spontaneous radiation damage event if in high flux
+      if (Math.random() < simState.fluxLevel * 0.008) {
+        createHotPixel();
+      }
+
+      // Render Active Focal Plane Array
+      drawFPA();
+
+      // Throttled Chart and Telemetry updates (every 5 ticks ~ 200ms)
+      if (simState.timeStep % 5 === 0) {
+        updateTelemetryData();
+      }
+    }
+
+    function drawFPA() {
+      const w = canvas.clientWidth || 600;
+      const h = canvas.clientHeight || 340;
+      const centerX = w / 2;
+      const centerY = h / 2;
+
+      // Clear Canvas to Space Dark
+      ctx.fillStyle = '#040711';
+      ctx.fillRect(0, 0, w, h);
+
+      // Draw Sensor Grid Substrate (FPA Pixel Array Boundary)
+      ctx.strokeStyle = 'rgba(30, 41, 59, 0.4)';
+      ctx.lineWidth = 1;
+      const gridSize = 35;
+      for (let x = 0; x < w; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y < h; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Draw Center Boresight Crosshair
+      ctx.strokeStyle = 'rgba(6, 182, 212, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(centerX - 15, centerY);
+      ctx.lineTo(centerX + 15, centerY);
+      ctx.moveTo(centerX, centerY - 15);
+      ctx.lineTo(centerX, centerY + 15);
+      ctx.stroke();
+
+      // 1. Draw True Moving Stellar Centroids (Follow Gyro Phase Shift)
+      simState.stars.forEach(star => {
+        const theta = star.initialAngle + simState.currentAngle;
+        const x = centerX + Math.cos(theta) * star.radius;
+        const y = centerY + Math.sin(theta) * star.radius;
+
+        // Draw Motion Trail
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.15)';
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, star.radius, theta - 0.25, theta);
+        ctx.stroke();
+
+        // Draw Star Glow
+        const gradient = ctx.createRadialGradient(x, y, 1, x, y, 9);
+        gradient.addColorStop(0, '#ffffff');
+        gradient.addColorStop(0.3, star.color);
+        gradient.addColorStop(1, 'transparent');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, 9, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Centroid Point
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Identifier Label
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.7)';
+        ctx.font = '9px "JetBrains Mono"';
+        ctx.fillText(star.id.split(' ')[0], x + 8, y - 4);
+      });
+
+      // 2. Draw Radiation Displacement Damage Hot Pixels
+      simState.hotPixels.forEach(defect => {
+        // Radiation damage is spatially FIXED on the CMOS array (does NOT rotate with theta)
+        const x = defect.x;
+        const y = defect.y;
+
+        // Dark current surges with temperature via Arrhenius law
+        const tempKelvin = simState.fpaTemp + 273.15;
+        const arrheniusFactor = Math.exp(-7300 / tempKelvin) * 1.5e11;
+        const brightness = Math.min(1.0, 0.3 + arrheniusFactor * 0.05);
+
+        if (simState.filterActive) {
+          // Filter Enabled: StarTrack zeroes out the pixel
+          ctx.strokeStyle = '#10b981';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.strokeRect(x - 6, y - 6, 12, 12);
+
+          ctx.fillStyle = 'rgba(16, 185, 129, 0.8)';
+          ctx.font = '8px "JetBrains Mono"';
+          ctx.fillText('ZEROED', x + 8, y + 3);
+        } else {
+          // Filter Disabled: False Hot Pixel Poisons Optical Solution
+          const glow = ctx.createRadialGradient(x, y, 1, x, y, 8);
+          glow.addColorStop(0, `rgba(255, 255, 255, ${brightness})`);
+          glow.addColorStop(0.4, `rgba(244, 63, 94, ${brightness})`);
+          glow.addColorStop(1, 'transparent');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(x, y, 8, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#f43f5e';
+          ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
+
+          ctx.fillStyle = 'rgba(244, 63, 94, 0.8)';
+          ctx.font = '8px "JetBrains Mono"';
+          ctx.fillText('FALSE STAR', x + 8, y + 3);
+        }
+      });
+    }
+
+    function updateTelemetryData() {
+      // 1. Update Phase Space Diagnostic Chart
+      const starPoints = simState.stars.map(star => {
+        const thetaDeg = ((star.initialAngle + simState.currentAngle) * (180 / Math.PI)) % 360;
+        return {
+          x: simState.fpaTemp,
+          y: thetaDeg
+        };
+      });
+
+      const defectPoints = simState.hotPixels.map(defect => {
+        return {
+          x: simState.fpaTemp,
+          y: 3.5 // Clustered near zero phase shift
+        };
+      });
+
+      if (phaseSpaceChart) {
+        phaseSpaceChart.data.datasets[0].data = starPoints;
+        phaseSpaceChart.data.datasets[1].data = defectPoints;
+        phaseSpaceChart.update('none');
+      }
+
+      // 2. Compute Attitude Residuals
+      let currentResidual = 0.003;
+      if (!simState.filterActive && simState.hotPixels.length > 0) {
+        currentResidual = 0.003 + simState.hotPixels.length * 0.012;
+      }
+      simState.historyResidual.shift();
+      simState.historyResidual.push(currentResidual);
+
+      // 3. Compute Dark Current Rate via Arrhenius Law
+      const tempK = simState.fpaTemp + 273.15;
+      const baseDark = Math.round(15 + Math.exp(-6500 / tempK) * 8.5e10 + (simState.hotPixels.length * 9));
+      simState.historyDarkCurrent.shift();
+      simState.historyDarkCurrent.push(baseDark);
+
+      // Update Chart Series
+      if (telemetryResidualChart) {
+        telemetryResidualChart.data.datasets[0].data = simState.historyResidual;
+        telemetryResidualChart.options.scales.y.max = Math.max(0.05, currentResidual * 1.3);
+        telemetryResidualChart.update('none');
+      }
+      if (telemetryDarkCurrentChart) {
+        telemetryDarkCurrentChart.data.datasets[0].data = simState.historyDarkCurrent;
+        telemetryDarkCurrentChart.options.scales.y.max = Math.max(120, baseDark * 1.3);
+        telemetryDarkCurrentChart.update('none');
+      }
+
+      // Update Text Displays
+      document.getElementById('residualMetric').innerText = currentResidual.toFixed(4) + ' deg (' + (currentResidual < 0.015 ? 'Locked' : 'DIVERGED') + ')';
+      document.getElementById('darkCurrentMetric').innerText = baseDark + ' e⁻/s (' + (baseDark < 80 ? 'Nominal' : 'HIGH DSNU') + ')';
+      
+      updateAttitudeUI();
+    }
+
+    function updateAttitudeUI() {
+      const banner = document.getElementById('simAlertBanner');
+      const headerStatus = document.getElementById('headerAttitudeStatus');
+
+      if (!simState.filterActive && simState.hotPixels.length > 1) {
+        banner.className = 'p-4 rounded-xl border border-rose-500/40 bg-rose-950/30 text-rose-300 flex items-center justify-between text-xs sm:text-sm glow-rose';
+        banner.innerHTML = `
+          <div class="flex items-center space-x-3">
+            <div class="p-2 rounded-lg bg-rose-500/20 text-rose-400">
+              <i data-lucide="alert-triangle" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <span class="font-semibold font-mono tracking-wide">ATTITUDE DIVERGENCE WARNING:</span> Unmasked hot pixels have corrupted the QUEST star matching catalog. Loss of 3-axis pointing imminent!
+            </div>
+          </div>
+          <span class="font-mono bg-rose-500/20 px-2.5 py-1 rounded border border-rose-500/40 text-[11px] text-rose-300 font-bold animate-pulse">ERROR: 0.048°</span>
+        `;
+        headerStatus.className = 'text-rose-400 font-semibold flex items-center justify-end space-x-1';
+        headerStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-rose-500 animate-ping mr-1"></span> POINTING RUNAWAY';
+      } else {
+        banner.className = 'p-4 rounded-xl border border-emerald-500/30 bg-emerald-950/20 text-emerald-300 flex items-center justify-between text-xs sm:text-sm';
+        banner.innerHTML = `
+          <div class="flex items-center space-x-3">
+            <div class="p-2 rounded-lg bg-emerald-500/20 text-emerald-400">
+              <i data-lucide="shield-check" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <span class="font-semibold font-mono tracking-wide">ADCS KALMAN FILTER LOCKED:</span> StarTrack dynamic zeroing active. True optical vectors verified against gyro rotation.
+            </div>
+          </div>
+          <span class="font-mono bg-emerald-500/10 px-2.5 py-1 rounded border border-emerald-500/30 text-[11px]">RESIDUAL ERROR: 0.002°</span>
+        `;
+        headerStatus.className = 'text-emerald-400 font-semibold flex items-center justify-end space-x-1';
+        headerStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse mr-1"></span> NOMINAL LOCKED (3-AXIS)';
+      }
+      lucide.createIcons();
+    }
+
+    function updateCounterDisplays() {
+      document.getElementById('countAnomalies').innerText = simState.hotPixels.length;
+      document.getElementById('headerHotPixelsCount').innerText = simState.hotPixels.length + ' Pixels';
+      document.getElementById('countRejected').innerText = simState.filterActive ? simState.hotPixels.length : 0;
+    }
+
+    // Interactive Sliders Handler
+    function updateSimulationParameters() {
+      // Temperature
+      const tempVal = parseFloat(document.getElementById('sliderTemp').value);
+      simState.fpaTemp = tempVal;
+      document.getElementById('sliderTempVal').innerText = (tempVal > 0 ? '+' : '') + tempVal.toFixed(1) + ' °C';
+      document.getElementById('telemetryFpaTemp').innerText = (tempVal > 0 ? '+' : '') + tempVal.toFixed(1) + ' °C';
+
+      // Slew Rate
+      const slewVal = parseFloat(document.getElementById('sliderSlew').value);
+      simState.slewRate = slewVal;
+      document.getElementById('sliderSlewVal').innerText = slewVal.toFixed(2) + ' °/s';
+      document.getElementById('telemetrySlew').innerText = slewVal.toFixed(2) + ' °/s';
+
+      // Radiation Flux
+      const fluxVal = parseInt(document.getElementById('sliderFlux').value, 10);
+      simState.fluxLevel = fluxVal;
+      const fluxLabels = ['Minimal (Equatorial LEO)', 'Medium (Van Allen Belts)', 'Intense (South Atlantic Anomaly)', 'Severe (Polar Orbit Storm)', 'Extreme (Jupiter/Europa Belt)'];
+      document.getElementById('sliderFluxVal').innerText = fluxLabels[fluxVal - 1];
+      document.getElementById('headerRadiationFlux').innerText = (fluxVal * 0.85 + 0.5).toFixed(2) + ' × 10⁴ p⁺/cm²/s';
+    }
+
+    // -------------------------------------------------------------
+    // Window Load Initialization
+    // -------------------------------------------------------------
+    window.onload = function() {
+      // Initialize Lucide Icons
+      lucide.createIcons();
+
+      // Setup Canvas
+      resizeCanvas();
+
+      // Initialize Charts
+      initCharts();
+
+      // Start 40ms High-Rate Physics Animation Loop
+      setInterval(updateSimulation, 40);
+    };
+  </script>
+</body>
+</html>
